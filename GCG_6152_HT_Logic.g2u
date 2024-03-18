@@ -1,0 +1,330 @@
+﻿Program.Sub.Preflight.Start
+v.Global.sOrder.Declare
+v.Global.sCust.Declare
+v.Global.sPckList.Declare
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+v.Local.sFolder.Declare
+v.Local.sText.Declare
+v.Local.bExists.Declare
+Function.Intrinsic.UI.UsePixels ' Allows you to use Pixels instead of Twips throughout
+f.Intrinsic.Control.CallSub(checkCustomFolder)
+F.Intrinsic.Control.If(v.Caller.Hook, =, "28530")
+	v.Global.sOrder.Set(v.Passed.FIRST-ORDER)
+	v.Global.sCust.Set(v.Passed.000204)
+	v.Global.sPckList.Set(v.Passed.000168)
+	
+	f.Intrinsic.String.Build("{0}\CUSTOM\GCG_6152\{1}{2}Param.txt", v.Caller.GlobalDir, v.Caller.Terminal, v.Caller.CompanyCode, v.Local.sFolder)
+	f.Intrinsic.String.Build("{0}*!*{1}*!*{2}", v.Global.sOrder, v.Global.sCust, v.Global.sPckList, v.Local.sText)
+	
+	f.Intrinsic.File.String2File(v.Local.sFolder, v.Local.sText)
+	
+f.Intrinsic.Control.ElseIf(v.Caller.Hook, =, "16090")
+	f.Intrinsic.String.Build("{0}\CUSTOM\GCG_6152\{1}{2}Param.txt", v.Caller.GlobalDir, v.Caller.Terminal, v.Caller.CompanyCode, v.Local.sFolder)
+	
+	f.Intrinsic.File.Exists(v.Local.sFolder, v.Local.bExists)
+	f.Intrinsic.Control.If(v.Local.bExists.Not)
+		f.Intrinsic.Control.End
+	f.Intrinsic.Control.EndIf
+	f.Intrinsic.File.File2String(v.Local.sFolder, v.Local.sText)
+	
+	f.Intrinsic.String.Split(v.Local.sText, "*!*", v.Local.sText)
+	f.Intrinsic.Control.If(v.Local.sText.UBound, =, 2)
+		v.Global.sOrder.Set(v.Local.sText(0))
+		v.Global.sCust.Set(v.Local.sText(1))
+		v.Global.sPckList.Set(v.Local.sText(2))
+		
+		f.Intrinsic.File.DeleteFile(v.Local.sFolder)
+		
+		'Get Order Lines
+		f.Intrinsic.Control.CallSub(getLines)
+		
+	f.Intrinsic.Control.EndIf
+	
+f.Intrinsic.Control.ElseIf(v.Caller.Hook, =, "25970")
+	v.Global.sOrder.Set(v.Passed.000150)
+	v.Global.sCust.Set(v.Passed.000006)
+	v.Global.sPckList.Set(v.Passed.000003)
+	
+	'Get Order Lines
+	f.Intrinsic.Control.CallSub(getLines)
+f.Intrinsic.Control.Else
+	f.Intrinsic.Control.End
+F.Intrinsic.Control.EndIf
+Program.Sub.Main.End
+
+Program.Sub.checkCustomFolder.Start
+v.Local.sFolder.Declare
+v.Local.bExists.Declare
+f.Intrinsic.Control.Try
+	f.Intrinsic.String.Build("{0}\CUSTOM\GCG_6152\", v.Caller.GlobalDir, v.Local.sFolder)
+	f.Intrinsic.File.DirExists(v.Local.sFolder, v.Local.bExists)
+	f.Intrinsic.Control.If(v.Local.bExists.Not)
+		f.Intrinsic.File.CreateDir(v.Local.sFolder)
+	f.Intrinsic.Control.EndIf
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+f.Intrinsic.Control.EndTry
+Program.Sub.checkCustomFolder.End
+
+Program.Sub.ErrorMsg.Start
+v.Local.sError.Declare
+
+'Closes ODBC connection, default to connection : "con"
+f.Intrinsic.Control.If(v.ODBC!con.State, =, 1)
+	f.ODBC.Connection!con.Close
+f.Intrinsic.Control.EndIf
+
+'Generic Error message.
+f.Intrinsic.String.Build("Project GCG_6152_HT_logic.g2u {0}{0}Subroutine: {1}{0}Error: {2} with Description: {3}", v.Ambient.NewLine, v.Args.CurrentSub, v.Ambient.ErrorNumber, v.Ambient.ErrorDescription, v.Local.sError)
+f.Intrinsic.UI.Msgbox(v.Local.sError)
+Program.Sub.ErrorMsg.End
+
+Program.Sub.getLines.Start
+v.Local.sOrder.Declare
+v.Local.sRecordNo.Declare
+v.Local.sCust.Declare
+v.Local.sCurrency.Declare
+
+v.Local.sSQL.Declare
+v.Local.sRet.Declare
+
+v.Local.sBlank.Declare
+v.Local.sQty.Declare
+
+v.Local.sLine.Declare
+v.Local.sText.Declare
+v.Local.sPath.Declare
+
+v.Local.fExtension.Declare
+v.Local.fRate.Declare
+v.Local.fHandlingCharge.Declare
+v.Local.bHT_Exists.Declare
+
+v.Local.iConDB.Declare
+v.Local.iStatus.Declare
+'v.Local.iNumOrder.Declare
+v.Local.sNumOrder.Declare(String, "")
+v.Local.sNumSeq.Declare(String, "")
+v.Local.bCharge.Declare(Boolean, True)
+v.Local.sPart.Declare
+v.Local.sPackingList.Declare(String, "")
+
+v.Local.sPSQLDate.Declare
+v.Local.sPSQLTime.Declare
+v.Local.sOrderSufix.Declare
+v.Local.sTempPCK.Declare
+v.Local.sGLAccount.Declare
+
+v.Local.sTax_Ctr.Declare
+v.Local.sTaxAuth.Declare
+v.Local.sApply.Declare
+v.Local.sTaxtState.Declare
+v.Local.sTaxZip.Declare
+v.Local.sTaxZone.Declare
+v.Local.iTaxSource.Declare(Long, 1)
+f.Intrinsic.Control.Try
+'Try something
+	v.Local.sOrder.Set(v.Global.sOrder)
+	v.Local.sCust.Set(v.Global.sCust)
+	v.Local.sNumOrder.Set(v.Local.sOrder)
+	v.Local.sPackingList.Set(v.Global.sPckList)
+	
+	f.Intrinsic.String.Format(v.Ambient.Date, "mmddyy", v.Local.sPSQLDate)
+	f.Intrinsic.String.Format(v.Ambient.Time, "hhnnss", v.Local.sPSQLTime)
+	
+	'Pad Order
+	f.Intrinsic.String.LPad(v.Local.sOrder, "0", 7, v.Local.sOrder)
+	f.Intrinsic.String.LPad(v.Local.sPackingList, "0", 7, v.Local.sTempPCK)
+	'f.Intrinsic.String.LPad(v.Local.sPackingList, "0", 7, v.Local.sPackingList)
+	
+'	f.ODBC.Connection!con.OpenCompanyConnection
+'		f.Intrinsic.String.Build("Select User_5 from V_ORDER_HEADER where Order_no = '{0}'", v.Local.sOrder, v.Local.sSQL)
+'		f.ODBC.Connection!con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+'	f.ODBC.Connection!con.Close
+'	
+'	f.Intrinsic.String.UCase(v.Local.sRet, v.Local.sRet)
+'	f.Intrinsic.Control.If(v.Local.sRet.Trim, =, "DROP SHIP")
+'		f.Intrinsic.Control.ExitSub
+'	f.Intrinsic.Control.EndIf
+	
+	f.ODBC.Connection!con.OpenCompanyConnection
+		f.Intrinsic.String.Build("Select Order_no, Record_no, Customer, Qty_ordered, cast(Qty_shipped as Float) as Qty_shipped, part, cast(Price as Float) as Price, Extension, User_5 from V_ORDER_LINES where Order_No = '{0}' and Part <> 'HANDLING' and Line_Type = 'S' and User_5 not like 'DROP SHIP%' order by Record_no asc", v.Local.sOrder, v.Local.sSQL)
+	 	f.Data.Datatable.CreateFromSQL("soDT", "con", v.Local.sSQL)
+	 	
+	 	f.Data.Datatable.AddExpressionColumn("soDT", "Extension_New", "Float", "Qty_shipped*Price")
+	 	
+	 	f.Data.Datatable.AddColumn("soDT", "sourceCol", "String")
+	 	f.Data.Dictionary.CreateFromSQL("sourceDict", "con", "Select Part, Code_Source from V_Inventory_All")
+	 	f.Data.Dictionary.SetDefaultReturn("sourceDict", "")
+	 	f.Data.Datatable.FillFromDictionary("soDT", "sourceDict", "Part", "sourceCol")
+	 	f.Data.Dictionary.Close("sourceDict")
+	 	
+	 	f.Intrinsic.String.Build("Select TAX_AUTH_CTR from CUSTOMER_TAX where cust = '{0}'", v.Local.sCust, v.Local.sSQL)
+	 	f.ODBC.Connection!con.ExecuteAndReturn(v.Local.sSQL, v.Local.sTax_Ctr)
+	 
+	 	f.Intrinsic.String.Build("Select TAX_STATE from CUSTOMER_TAX where cust = '{0}'", v.Local.sCust, v.Local.sSQL)
+	 	f.ODBC.Connection!con.ExecuteAndReturn(v.Local.sSQL, v.Local.sTaxtState)
+	 	
+	 	f.Intrinsic.String.Build("Select TAX_ZIP from CUSTOMER_TAX where cust = '{0}'", v.Local.sCust, v.Local.sSQL)
+	 	f.ODBC.Connection!con.ExecuteAndReturn(v.Local.sSQL, v.Local.sTaxZip)
+	 	
+	 	f.Intrinsic.String.Build("Select Tax_Auth from CUSTOMER_TAX_AUTH where cust = '{0}' and tax_seq = '{1}'", v.Local.sCust, v.Local.sTax_Ctr, v.Local.sSQL)
+	 	f.ODBC.Connection!con.ExecuteAndReturn(v.Local.sSQL, v.Local.sTaxAuth)
+	 	
+	 	f.Intrinsic.String.Build("Select Tax_Zone from CUSTOMER_TAX_AUTH where cust = '{0}' and tax_seq = '{1}'", v.Local.sCust, v.Local.sTax_Ctr, v.Local.sSQL)
+	 	f.ODBC.Connection!con.ExecuteAndReturn(v.Local.sSQL, v.Local.sTaxZone)
+	 	
+	 	f.Intrinsic.String.Build("Select HandlingType from GCG_6152_CUST_HT where Customer = '{0}'", v.Local.sCust, v.Local.sSQL)
+	 	f.ODBC.Connection!con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)	
+	 	
+	 	f.Intrinsic.Control.If(v.Local.sRet.Trim, <>, "")
+	 		v.Local.bHT_Exists.Set(True)
+	 	f.Intrinsic.Control.EndIf
+	 	'ORDER_CURRENCY
+	 	f.Intrinsic.String.Build("Select HT_Rate from GCG_6152_HT_RATES where HT_Name = '{0}'", v.Local.sRet, v.Local.sSQL)
+	 	f.ODBC.Connection!con.ExecuteAndReturn(v.Local.sSQL, v.Local.fRate)
+	 	
+	 	'f.Intrinsic.String.Build("Select Record_No From V_Order_Lines where Order_No = '{0}' and Part = 'HANDLING' and record_no = '7500'", v.Local.sOrder, v.Local.sSQL)
+	 	f.Intrinsic.String.Build("Select order_rec From V_SHIPMENT_LINES where Order_No = '{0}' and order_rec = '7500' and pck_no = '{1}'", v.Local.sOrder, v.Local.sTempPCK, v.Local.sSQL)
+	 	f.ODBC.Connection!con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+	 	
+	 	f.Intrinsic.String.Build("select ORDER_CURRENCY from V_ORDER_HEADER where Order_no = '{0}'", v.Local.sOrder, v.Local.sSQL)
+	 	f.ODBC.Connection!con.ExecuteAndReturn(v.Local.sSQL, v.Local.sCurrency)
+	 	'top 1 cast(order_suffix as integer)
+	 	f.Intrinsic.String.Build("Select top 1 cast(order_suffix as integer) From V_SHIPMENT_LINES where pck_no = '{0}'", v.Local.sTempPCK, v.Local.sSQL)
+	 	f.ODBC.Connection!con.ExecuteAndReturn(v.Local.sSQL, v.Local.sOrderSufix)
+	 	
+	 	f.ODBC.Connection!con.ExecuteAndReturn("select GL_ACCOUNT from SHIPPING_CHARGES where key_type = 'Handling'", v.Local.sGLAccount)
+	f.ODBC.Connection!con.Close
+	
+	f.Intrinsic.Control.If(v.Local.bHT_Exists.Not)
+		f.Intrinsic.Control.ExitSub
+	f.Intrinsic.Control.EndIf
+	
+	'get Total Extension
+	f.Data.Datatable.Compute("soDT", "Sum(Extension_New)", "sourceCol = 'P'", v.Local.fExtension)
+	f.Intrinsic.Math.Mult(v.Local.fExtension, v.Local.fRate, v.Local.fHandlingCharge)
+	f.Intrinsic.Math.Round(v.Local.fHandlingCharge, 2, v.Local.fHandlingCharge)
+	
+	f.Intrinsic.Control.If(v.Local.fHandlingCharge, =, 0)
+		f.Intrinsic.Control.End
+	f.Intrinsic.Control.EndIf
+	'Update or Add new line
+	v.Local.sNumSeq.Set("7500")
+	v.Local.sNumOrder.Set(v.Local.sOrder.Long)
+	'f.Intrinsic.String.Replace(v.Local.sOrder, "0", "", v.Local.sNumOrder)
+	v.Local.sPart.Set("HANDLING")
+	f.Intrinsic.String.RPad(v.Local.sPart, " ", 20, v.Local.sPart)
+	
+	f.Global.Object.CreateDB("DB", v.Local.iConDB)
+	f.Global.Object.Create("shipLine", "Sales.Shipping.ShipmentLine", "DB", v.Local.iConDB)
+	f.Global.Object.SetValue("shipLine", "AdditionalCharge.IsShippingCharge", v.Local.bCharge)
+	f.Global.Object.SetValue("shipLine", "SalesOrderNumber", v.Local.sNumOrder)
+	f.Global.Object.SetValue("shipLine", "SalesOrderLineNumber", v.Local.sNumSeq)
+	f.Global.Object.SetValue("shipLine", "ShipmentSequence", v.Local.sOrderSufix)
+	
+	f.Global.Object.SetValue("shipLine", "SalesOrder.Customer.CustomerNumberFO", v.Local.sCust)
+	f.Global.Object.SetValue("shipLine", "SalesOrderLine.Part.Description.Primary", "HANDLING/DISTRIBUTION CHARGE")
+	f.Global.Object.SetValue("shipLine", "Shipment.Consignment.Original.Shipment.Packing.PackingListNumberFO", v.Local.sPackingList)
+	f.Global.Object.SetValue("shipLine", "Shipment.Packing.PackingListNumberFO", v.Local.sPackingList)
+	
+	f.Global.Object.SetValue("shipLine", "SalesOrderLine.Accounting.Account.AccountNumber", v.Local.sGLAccount)
+	f.Global.Object.SetValue("shipLine", "SalesOrderLine.Pricing.MonetaryValue.Customer.Unit", v.Local.fHandlingCharge)
+	f.Global.Object.SetValue("shipLine", "SalesOrderLine.Pricing.MonetaryValue.Customer.Extended", v.Local.fHandlingCharge)
+	f.Global.Object.SetValue("shipLine", "SalesOrderLine.Pricing.MonetaryValue.Company.Unit", v.Local.fHandlingCharge)
+	f.Global.Object.SetValue("shipLine", "SalesOrderLine.Pricing.MonetaryValue.Company.Extended", v.Local.fHandlingCharge)
+	f.Global.Object.SetValue("shipLine", "SalesOrderLine.Quantity.Ordered", 1)
+	f.Global.Object.SetValue("shipLine", "Quantity.Shipped", 1)
+	
+	v.Local.sApply.Set("Y")
+'	
+'	f.Global.Object.SetValue("shipLine", "SalesOrderLine.Tax.IsTaxable", v.Local.bCharge)	
+'	f.Intrinsic.Control.If(v.Local.sTaxAuth.Trim, <>, "")
+'		f.Global.Object.SetValue("shipLine", "SalesOrderLine.Tax.TaxAuthorityCode", v.Local.sTaxAuth.Trim)
+'	f.Intrinsic.Control.EndIf	
+'	f.Global.Object.SetValue("shipLine", "SalesOrderLine.Tax.Apply", v.Local.bCharge)
+'	f.Global.Object.SetValue("shipLine", "SalesOrderLine.Tax.Source", v.Local.iTaxSource)
+'	f.Global.Object.SetValue("shipLine", "SalesOrderLine.Tax.State", v.Local.sTaxtState)
+'	f.Global.Object.SetValue("shipLine", "SalesOrderLine.Tax.ZipCode", v.Local.sTaxZip)
+'	f.Global.Object.SetValue("shipLine", "SalesOrderLine.Tax.TaxAuthorityZone", v.Local.sTaxZone)
+	
+	f.Intrinsic.String.LPad(v.Local.sPackingList, "0", 7, v.Local.sPackingList)
+	f.Intrinsic.String.LPad(v.Local.sOrderSufix, "0", 4, v.Local.sOrderSufix)
+	';Handling Charge	
+	f.Intrinsic.Control.If(v.Local.sRet.Trim, =, "")
+		f.Global.Object.Insert("shipLine",v.Local.iStatus)
+	f.Intrinsic.Control.Else
+		f.Global.Object.Update("shipLine", v.Local.iStatus)
+	f.Intrinsic.Control.EndIf
+	
+	f.ODBC.Connection!con.OpenCompanyConnection
+		v.Local.sRet.Set("")
+		f.Intrinsic.String.Build("Select Order_num from SHIP_CHARGE_REQ where Order_num = '{0}' and seq = '{1}' and line = '{2}'", v.Local.sOrder, v.Local.sOrderSufix, "7500", v.Local.sSQL)
+		f.ODBC.Connection!con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+		
+		f.Intrinsic.Control.If(v.Local.sRet, =, "")
+			f.Intrinsic.String.Build("Insert into  SHIP_CHARGE_REQ (Order_Num, Seq, Line, Part, Date_Added, Time_Added, Added_By, Pgm_Added) Values ('{0}', '{1}', '{2}', '{3}', '{4}', '{5}', '{6}', '{7}')", v.Local.sOrder, v.Local.sOrderSufix, "7500", v.Local.sPart, v.Local.sPSQLDate, v.Local.sPSQLTime, v.Caller.User, "GCG_6152", v.Local.sSQL)
+			f.ODBC.Connection!con.Execute(v.Local.sSQL)
+			
+			f.Intrinsic.String.LPad(v.Local.sOrder, "0", 7, v.Local.sOrder)
+			f.Intrinsic.String.LPad(v.Local.sOrderSufix, "0", 4, v.Local.sOrderSufix)
+			
+			f.Intrinsic.String.Build("Update SHIPMENT_LINES Set FLAG_TAX_STATUS = 'T', TAX_1 = '{0}', TAX_APPLY_1 = 'Y', TAX_SOURCE = 'M', TAX_STATE = '{1}', TAX_ZIP = '{2}', TAX_ZONE_1 = '{3}'  Where order_no = '{4}' and order_suffix = '{5}' and order_rec = '7500'", v.Local.sTaxAuth.Trim, v.Local.sTaxtState.Trim, v.Local.sTaxZip.Trim, v.Local.sTaxZone.Trim, v.Local.sOrder, v.Local.sOrderSufix, v.Local.sSQL)
+			
+			f.ODBC.Connection!con.Execute(v.Local.sSQL)
+		f.Intrinsic.Control.EndIf			
+	f.ODBC.Connection!con.Close
+
+	'Close Objects
+	Function.Global.Object.Dispose("shipLine")
+	Function.Global.Object.CloseConnection("DB", v.Local.iConDB)
+
+	
+	
+	'Not in use
+'		'Add New Line
+'		v.Local.sBlank.Set(" ")
+'		f.Intrinsic.String.LPad(v.Local.sBlank, " ", 19, v.Local.sBlank)
+'		'Format QTY
+'		f.Intrinsic.String.Format("1", "000000000.0000", v.Local.sQty)
+'		f.Intrinsic.String.LPad(v.Local.sQty, " ", 16, v.Local.sQty)
+'		
+'		'f.Intrinsic.String.Build("{0}   A{1}{0}750L{2}{3}", v.Local.sOrder, v.Ambient.NewLine, v.Local.sBlank, v.Local.sQty, v.Local.sLine)
+'		f.Intrinsic.String.Build("{0}750L{1}{2}", v.Local.sOrder, v.Local.sBlank, v.Local.sQty, v.Local.sLine)
+'		v.Local.sBlank.Set(" ")
+'		f.Intrinsic.String.LPad(v.Local.sBlank, " ", 16, v.Local.sBlank)
+'		
+'		f.Intrinsic.String.Build("{0}{1}{2}", v.Local.sLine, v.Local.sBlank, v.Local.sQty, v.Local.sLine)
+'		v.Local.sBlank.Set(" ")
+'		f.Intrinsic.String.LPad(v.Local.sBlank, " ", 18, v.Local.sBlank)
+'		
+'		f.Intrinsic.String.Format(v.Local.fHandlingCharge, "00000000.00000", v.Local.sQty)
+'		f.Intrinsic.String.LPad(v.Local.sQty, " ", 16, v.Local.sQty)
+'		
+'		f.Intrinsic.String.Build("{0}{1}HANDLING            {2}", v.Local.sLine, v.Local.sBlank, v.Local.sQty, v.Local.sLine)
+'		v.Local.sBlank.Set(" ")
+'		f.Intrinsic.String.LPad(v.Local.sBlank, " ", 432, v.Local.sBlank)
+'		f.Intrinsic.String.Format(v.Local.fHandlingCharge, "0000000000000.00", v.Local.sQty)
+'		'f.Intrinsic.String.LPad(v.Local.sQty, " ", 16, v.Local.sQty)
+'		
+'		f.Intrinsic.String.Build("{0}{1}{2}{3}", v.Local.sLine, v.Local.sBlank,v.Local.sCurrency, v.Local.sQty, v.Local.sLine)
+'		v.Local.sBlank.Set(" ")
+'		
+'		F.Intrinsic.String.Concat(V.Caller.FilesDir,"\SALESHDR.TXT",V.Local.sPath)
+'		f.Intrinsic.File.String2File(v.Local.sPath, v.Local.sLine)
+'		F.Intrinsic.String.Concat("UPLSALES/C!*!",V.Caller.CompanyCode,V.Local.sText)
+'		'F.Intrinsic.String.Concat("UPLSALES!*!",V.Caller.CompanyCode,V.Local.sText)
+'		F.Global.General.CallWrapperSync(50,V.Local.sText)
+	
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+f.Intrinsic.Control.EndTry
+Program.Sub.getLines.End
+
+Program.Sub.Comments.Start
+${$5$}$3.0.0.0$}$1
+${$6$}$aanazco$}$20210315090304738$}$7aQAV3Tor/tR9bkuakHbuzQlHVuXCGOzt/2tZKHQYyrnVzWu9S1kSxpKOvyiF+f1pIgTDS8UCZQ=
+Program.Sub.Comments.End
